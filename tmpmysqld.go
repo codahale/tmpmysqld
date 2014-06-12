@@ -72,6 +72,7 @@ func NewMySQLServer(name string) (*MySQLServer, error) {
 	mysqld := exec.Command(
 		"mysqld",
 		"--no-defaults",
+		"--skip-networking",
 		"--datadir="+dataDir,
 		"--socket="+sockPath,
 	)
@@ -142,6 +143,7 @@ func installDB(baseDir, dataDir string) error {
 	cmd := exec.Command(
 		"mysql_install_db",
 		"--no-defaults",
+		"--skip-name-resolve",
 		"--basedir="+baseDir,
 		"--datadir="+dataDir,
 	)
