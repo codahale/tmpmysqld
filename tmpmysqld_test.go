@@ -6,15 +6,11 @@ import (
 )
 
 func TestMySQLServer(t *testing.T) {
-	server, err := NewMySQLServer(10000)
+	server, err := NewMySQLServer("tmpmysqld_test")
 	if err != nil {
 		t.Fatal(err)
 	}
 	defer server.Stop()
-
-	if err := server.Initialize("test"); err != nil {
-		t.Fatal(err)
-	}
 
 	if _, err := server.DB.Exec(`
 CREATE TABLE things (

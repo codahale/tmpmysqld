@@ -8,7 +8,6 @@ import (
 	"fmt"
 	"os/exec"
 	"path/filepath"
-	"strconv"
 	"time"
 
 	"io/ioutil"
@@ -19,16 +18,15 @@ import (
 
 // A MySQLServer is a temporary instance of mysqld.
 type MySQLServer struct {
-	database string
-	port     int
-	mysqld   *exec.Cmd
-	dataDir  string
+	dataDir string
+	mysqld  *exec.Cmd
 
 	DB *sql.DB
 }
 
-// NewMySQLServer returns a new mysqld instance running on the given port.
-func NewMySQLServer(port int) (*MySQLServer, error) {
+// NewMySQLServer returns a new mysqld instance running on the given port, with
+// the given database created and selected as the current database.
+func NewMySQLServer(name string) (*MySQLServer, error) {
 	baseDir, err := getBaseDir()
 	if err != nil {
 		return nil, err
@@ -43,37 +41,36 @@ func NewMySQLServer(port int) (*MySQLServer, error) {
 		return nil, err
 	}
 
+	f, err := ioutil.TempFile(os.TempDir(), "tmpmysqld.sock")
+	if err != nil {
+		return nil, err
+	}
+	sockPath := f.Name()
+	_ = f.Close()
+
 	mysqld := exec.Command(
 		"mysqld",
 		"--no-defaults",
 		"--datadir="+dataDir,
-		"--bind-address=127.0.0.1",
-		"--port="+strconv.Itoa(port),
+		"--socket="+sockPath,
 	)
 
 	if err := mysqld.Start(); err != nil {
 		return nil, err
 	}
 
-	return &MySQLServer{
+	s := MySQLServer{
 		mysqld:  mysqld,
 		dataDir: dataDir,
-		port:    port,
-	}, nil
-}
-
-// Initialize waits for the mysqld instance to become available, then creates
-// the given database and sets it as the current database.
-func (s *MySQLServer) Initialize(database string) error {
-	if s.DB != nil {
-		panic("already initialized")
 	}
 
-	dsn := fmt.Sprintf("root:@tcp(127.0.0.1:%d)/", s.port)
+	dsn := fmt.Sprintf("root:@unix(%s)/", sockPath)
 	db, err := sql.Open("mysql", dsn)
 	if err != nil {
-		return err
+		_ = s.Stop()
+		return nil, err
 	}
+
 	s.DB = db
 
 	// wait until the DB is available
@@ -81,15 +78,17 @@ func (s *MySQLServer) Initialize(database string) error {
 		time.Sleep(50 * time.Millisecond)
 	}
 
-	if _, err := db.Exec("CREATE DATABASE " + database); err != nil {
-		return err
+	if _, err := db.Exec("CREATE DATABASE " + name); err != nil {
+		_ = s.Stop()
+		return nil, err
 	}
 
-	if _, err := db.Exec("USE " + database); err != nil {
-		return err
+	if _, err := db.Exec("USE " + name); err != nil {
+		_ = s.Stop()
+		return nil, err
 	}
 
-	return nil
+	return &s, nil
 }
 
 // Stop terminates the mysqld instance and deletes the temporary directory which
@@ -99,18 +98,21 @@ func (s *MySQLServer) Stop() error {
 		panic("already stopped")
 	}
 
-	if err := s.DB.Close(); err != nil {
-		return err
+	if s.DB != nil { // might not be initialized
+		if err := s.DB.Close(); err != nil {
+			return err
+		}
 	}
 
 	if err := s.mysqld.Process.Signal(syscall.SIGTERM); err != nil {
 		return err
 	}
-	s.mysqld = nil
 
 	if err := s.mysqld.Wait(); err != nil {
 		return err
 	}
+
+	s.mysqld = nil
 
 	return os.RemoveAll(s.dataDir)
 }
