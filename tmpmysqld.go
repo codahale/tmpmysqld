@@ -16,6 +16,27 @@ import (
 	_ "github.com/go-sql-driver/mysql" // load MySQL driver
 )
 
+// IsMySQLInstalled returns true if the various required components of MySQL are
+// available.
+//
+// tmpmysqld requires mysqld, mysql_install_db, and mysql_config to be on the
+// path of the running process.
+func IsMySQLInstalled() bool {
+	if err := exec.Command("mysqld", "--version").Run(); err == exec.ErrNotFound {
+		return false
+	}
+
+	if err := exec.Command("mysql_install_db", "--verbose", "--help").Run(); err == exec.ErrNotFound {
+		return false
+	}
+
+	if err := exec.Command("mysql_config", "--version").Run(); err == exec.ErrNotFound {
+		return false
+	}
+
+	return true
+}
+
 // A MySQLServer is a temporary instance of mysqld.
 type MySQLServer struct {
 	dataDir string

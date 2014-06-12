@@ -6,6 +6,10 @@ import (
 )
 
 func TestMySQLServer(t *testing.T) {
+	if !IsMySQLInstalled() {
+		t.Skip("MySQL not installed")
+	}
+
 	server, err := NewMySQLServer("tmpmysqld_test")
 	if err != nil {
 		t.Fatal(err)
